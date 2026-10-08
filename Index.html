@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeonCut AI — Удаление фона</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --violet:#a855f7;
+    --violet-bright:#c084fc;
+    --violet-deep:#7c3aed;
+    --bg:#000000;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  body{
+    font-family:'Inter', system-ui, sans-serif;
+    background:#000;
+    color:#e9e4ff;
+    min-height:100vh;
+    overflow-x:hidden;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 38px 20px 70px;
+    -webkit-font-smoothing:antialiased;
+    position:relative;
+  }
+
+  /* фон */
+  .bg-glow{
+    position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
+  }
+  .bg-glow::before,
+  .bg-glow::after{
+    content:''; position:absolute; border-radius:50%;
+    filter: blur(140px); opacity:.55;
+  }
+  .bg-glow::before{
+    width:600px;height:600px;
+    background: radial-gradient(circle, #7c3aed 0%, transparent 65%);
+    top:-200px; left:-180px;
+    animation: float1 24s ease-in-out infinite;
+  }
+  .bg-glow::after{
+    width:560px;height:560px;
+    background: radial-gradient(circle, #c026d3 0%, transparent 65%);
+    bottom:-200px; right:-160px;
+    animation: float2 28s ease-in-out infinite;
+  }
+  @keyframes float1{
+    0%,100%{ transform: translate(0,0) scale(1); }
+    50%{ transform: translate(120px, 80px) scale(1.15); }
+  }
+  @keyframes float2{
+    0%,100%{ transform: translate(0,0) scale(1); }
+    50%{ transform: translate(-140px,-90px) scale(1.2); }
+  }
+  .grid{
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:
+      linear-gradient(rgba(168,85,247,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(168,85,247,.05) 1px, transparent 1px);
+    background-size: 50px 50px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 30%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 30%, transparent 100%);
+  }
+
+  header{
+    position:relative; z-index:2; text-align:center; margin-bottom:36px;
+    animation: fadeDown .9s cubic-bezier(.2,.8,.2,1) both;
+  }
+  @keyframes fadeDown{
+    from{ opacity:0; transform:translateY(-24px); }
+    to{ opacity:1; transform:none; }
+  }
+  h1{
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    font-weight: 800;
+    letter-spacing:-.03em;
+    line-height:1.05;
+    background: linear-gradient(100deg,#fff 0%,#e9d5ff 25%,#a855f7 55%,#7c3aed 80%,#fff 100%);
+    background-size: 250% 100%;
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    animation: shimmer 7s linear infinite;
+    filter: drop-shadow(0 0 28px rgba(168,85,247,.6));
+  }
+  @keyframes shimmer{ to{ background-position: 250% 0; } }
+  header p{
+    margin-top:12px; color:#a99bc9; font-size:.94rem; letter-spacing:.02em;
+  }
+  header p .dot{
+    display:inline-block; width:6px;height:6px;border-radius:50%;
+    background:#a855f7; margin-right:8px; vertical-align:middle;
+    box-shadow:0 0 12px #a855f7, 0 0 24px #a855f7;
+    animation: pulseDot 2s ease-in-out infinite;
+  }
+  @keyframes pulseDot{
+    0%,100%{opacity:1; transform:scale(1);}
+    50%{opacity:.35; transform:scale(.7);}
+  }
+
+  /* СТЕКЛО */
+  .glass{
+    background: linear-gradient(150deg, rgba(168,85,247,.08), rgba(88,28,135,.04) 45%, rgba(0,0,0,.55));
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    border: 1px solid rgba(168,85,247,.3);
+    border-radius: 24px;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,.03) inset,
+      0 24px 70px -18px rgba(124,58,237,.5),
+      0 0 90px -30px rgba(168,85,247,.65);
+    position:relative;
+  }
+  .glass::before{
+    content:''; position:absolute; inset:-1px; border-radius: inherit; padding:1px;
+    background: linear-gradient(140deg, rgba(192,132,252,.65), transparent 35%, transparent 65%, rgba(124,58,237,.5));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+    pointer-events:none;
+  }
+
+  main{ position:relative; z-index:2; width:100%; max-width:1000px; }
+
+  /* ЗАГРУЗКА */
+  .upload-zone{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;
+    padding: 78px 30px; cursor:pointer;
+    transition: transform .45s cubic-bezier(.2,.8,.2,1), border-color .35s, box-shadow .45s;
+    text-align:center; overflow:hidden;
+    animation: popIn .8s cubic-bezier(.2,.9,.3,1.2) both .1s;
+  }
+  @keyframes popIn{
+    from{ opacity:0; transform:scale(.94) translateY(20px); }
+    to{ opacity:1; transform:none; }
+  }
+  .upload-zone:hover{
+    transform: translateY(-6px) scale(1.012);
+    border-color: rgba(192,132,252,.65);
+  }
+  .upload-zone.drag{
+    transform: scale(1.02); border-color:#c084fc;
+    box-shadow: 0 0 0 2px rgba(192,132,252,.4), 0 0 120px -20px rgba(168,85,247,.95);
+  }
+  .upload-zone .beam{
+    position:absolute; top:0; left:-60%; width:60%; height:100%;
+    background: linear-gradient(100deg, transparent, rgba(192,132,252,.18), transparent);
+    transform: skewX(-18deg);
+    animation: beam 5.5s ease-in-out infinite;
+    pointer-events:none;
+  }
+  @keyframes beam{
+    0%{left:-70%;} 55%,100%{left:130%;}
+  }
+  .upload-icon{
+    width:96px;height:96px;border-radius:26px;
+    display:grid; place-items:center;
+    background: linear-gradient(145deg, rgba(168,85,247,.3), rgba(88,28,135,.12));
+    border:1px solid rgba(192,132,252,.45);
+    box-shadow: 0 0 44px -6px rgba(168,85,247,.8), inset 0 0 30px rgba(168,85,247,.25);
+    animation: bob 3.6s ease-in-out infinite;
+  }
+  @keyframes bob{
+    0%,100%{transform:translateY(0);}
+    50%{transform:translateY(-10px);}
+  }
+  .upload-icon svg{
+    width:44px;height:44px;stroke:#e9d5ff;stroke-width:1.7;fill:none;
+    stroke-linecap:round; stroke-linejoin:round;
+    filter: drop-shadow(0 0 12px rgba(192,132,252,.95));
+  }
+  .upload-zone h2{ font-size:1.35rem; font-weight:600; }
+  .upload-zone p{ color:#a99bc9; font-size:.9rem; }
+  .upload-zone .hint{
+    margin-top:6px; font-size:.76rem; color:#7d6fa0;
+    letter-spacing:.08em; text-transform:uppercase;
+  }
+
+  /* РЕДАКТОР */
+  .editor{
+    padding:22px; display:flex; flex-direction:column; gap:20px;
+    animation: popIn .7s cubic-bezier(.2,.9,.3,1.15) both;
+  }
+  .canvas-wrap{
+    position:relative;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:18px; padding:18px; min-height:280px;
+    background:
+      linear-gradient(45deg, rgba(168,85,247,.05) 25%, transparent 25%, transparent 75%, rgba(168,85,247,.05) 75%) 0 0/22px 22px,
+      linear-gradient(45deg, rgba(168,85,247,.05) 25%, transparent 25%, transparent 75%, rgba(168,85,247,.05) 75%) 11px 11px/22px 22px,
+      radial-gradient(circle at 50% 50%, rgba(124,58,237,.16), rgba(0,0,0,.75));
+    border:1px solid rgba(168,85,247,.22);
+    overflow:hidden;
+  }
+  canvas{
+    max-width:100%; max-height:58vh; display:block;
+    border-radius:10px;
+    box-shadow: 0 0 60px -10px rgba(168,85,247,.6), 0 0 0 1px rgba(192,132,252,.25);
+    touch-action:none; cursor: crosshair;
+  }
+  .brush-cursor{
+    position:absolute; border-radius:50%;
+    border:1.5px solid rgba(233,213,255,.95);
+    box-shadow: 0 0 12px rgba(192,132,252,.95), inset 0 0 12px rgba(192,132,252,.4);
+    pointer-events:none; transform: translate(-50%,-50%);
+    opacity:0; transition: opacity .18s; z-index:5;
+  }
+  .brush-cursor.show{ opacity:1; }
+  .brush-cursor.restore{
+    border-color: rgba(110,231,183,.95);
+    box-shadow: 0 0 12px rgba(52,211,153,.95), inset 0 0 12px rgba(52,211,153,.4);
+  }
+
+  /* ЗАГРУЗЧИК */
+  .loading-overlay{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px;
+    background: rgba(0,0,0,.85);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-radius:18px; z-index:10;
+    opacity:0; pointer-events:none; transition: opacity .35s;
+  }
+  .loading-overlay.show{ opacity:1; pointer-events:all; }
+  .spinner{
+    width:80px;height:80px;border-radius:50%;
+    background: conic-gradient(from 0deg, transparent 0%, #a855f7 30%, #e9d5ff 55%, transparent 75%);
+    animation: spin 1s linear infinite; position:relative;
+    filter: drop-shadow(0 0 24px rgba(168,85,247,.95));
+  }
+  .spinner::after{
+    content:''; position:absolute; inset:9px; border-radius:50%;
+    background: #000;
+    box-shadow: inset 0 0 26px rgba(168,85,247,.5);
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+  .loading-overlay .ltxt{
+    font-size:.9rem; color:#c9b8ee; letter-spacing:.05em; text-align:center;
+    padding:0 20px; max-width:90%;
+  }
+  .loading-overlay .lbar{
+    width:320px; max-width:80%; height:4px; border-radius:99px;
+    background: rgba(168,85,247,.2); overflow:hidden;
+  }
+  .loading-overlay .lbar i{
+    display:block; height:100%; width:0%;
+    background: linear-gradient(90deg,#7c3aed,#c084fc,#e9d5ff);
+    border-radius:99px;
+    box-shadow: 0 0 18px rgba(192,132,252,.95);
+    transition: width .3s ease;
+  }
+
+  /* ТУЛБАР */
+  .toolbar{
+    display:flex; flex-wrap:wrap; gap:12px;
+    align-items:center; justify-content:center;
+  }
+  .tool-group{
+    display:flex; gap:8px; padding:7px; border-radius:16px;
+    background: rgba(124,58,237,.1);
+    border:1px solid rgba(168,85,247,.22);
+  }
+  button{
+    font-family:inherit; cursor:pointer; border:none; outline:none;
+    color:#e9e4ff; background:transparent;
+    display:inline-flex; align-items:center; gap:9px;
+    padding: 11px 17px; border-radius:12px;
+    font-size:.86rem; font-weight:500;
+    transition: all .28s cubic-bezier(.2,.8,.2,1);
+    white-space:nowrap;
+  }
+  button svg{
+    width:17px;height:17px;stroke:currentColor;stroke-width:1.9;
+    fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;
+  }
+  button:hover{ background: rgba(168,85,247,.2); transform: translateY(-1px); }
+  button:active{ transform: translateY(0) scale(.97); }
+  button.active{
+    background: linear-gradient(140deg, rgba(168,85,247,.45), rgba(124,58,237,.3));
+    box-shadow: 0 0 0 1px rgba(192,132,252,.6) inset, 0 8px 26px -8px rgba(168,85,247,.95), 0 0 34px -10px rgba(192,132,252,.9);
+    color:#fff;
+  }
+  .btn-ai{
+    background: linear-gradient(135deg,#7c3aed,#a855f7 45%,#c026d3);
+    background-size:200% 200%;
+    color:#fff; font-weight:600; padding: 12px 26px;
+    box-shadow: 0 0 32px -6px rgba(168,85,247,.95), 0 10px 30px -12px rgba(192,38,211,.85);
+    animation: gradShift 4.5s ease infinite;
+  }
+  .btn-ai:hover{
+    box-shadow: 0 0 48px -4px rgba(192,132,252,1), 0 14px 36px -12px rgba(192,38,211,.95);
+  }
+  .btn-ai:disabled{
+    opacity:.6; cursor:not-allowed; animation:none;
+  }
+  @keyframes gradShift{
+    0%,100%{background-position:0% 50%;}
+    50%{background-position:100% 50%;}
+  }
+
+  .slider-wrap{
+    display:flex; align-items:center; gap:12px;
+    padding: 8px 18px; border-radius:16px;
+    background: rgba(124,58,237,.1);
+    border:1px solid rgba(168,85,247,.22);
+  }
+  .slider-wrap label{
+    font-size:.78rem; color:#a99bc9; letter-spacing:.04em;
+  }
+  .slider-wrap .val{
+    font-size:.78rem; font-weight:600; color:#e9d5ff;
+    min-width:32px; text-align:right;
+    font-variant-numeric: tabular-nums;
+  }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none;
+    width:120px; height:4px; border-radius:99px;
+    background: linear-gradient(90deg,#a855f7 var(--p,50%), rgba(168,85,247,.22) var(--p,50%));
+    outline:none; cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none;
+    width:16px;height:16px;border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #fff, #c084fc 55%, #7c3aed);
+    box-shadow: 0 0 14px rgba(192,132,252,.95);
+    transition: transform .2s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover{ transform: scale(1.2); }
+  input[type=range]::-moz-range-thumb{
+    width:16px;height:16px;border:none;border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #fff, #c084fc 55%, #7c3aed);
+    box-shadow: 0 0 14px rgba(192,132,252,.95);
+  }
+
+  /* ТОСТ */
+  .toast{
+    position:fixed; bottom:32px; left:50%;
+    transform: translate(-50%, 120%);
+    padding: 13px 22px; border-radius:14px;
+    background: rgba(10,2,22,.92);
+    backdrop-filter: blur(18px);
+    border:1px solid rgba(192,132,252,.5);
+    box-shadow: 0 0 44px -8px rgba(168,85,247,.95);
+    font-size:.86rem; color:#e9d5ff; z-index:99;
+    transition: transform .5s cubic-bezier(.2,.9,.3,1.2), opacity .4s;
+    opacity:0; pointer-events:none;
+    display:flex; align-items:center; gap:10px;
+    max-width:90vw;
+  }
+  .toast.show{ transform: translate(-50%, 0); opacity:1; }
+  .toast .tdot{
+    width:7px;height:7px;border-radius:50%;
+    background:#c084fc; box-shadow:0 0 12px #c084fc; flex-shrink:0;
+  }
+
+  footer{
+    position:relative; z-index:2; margin-top:38px;
+    font-size:.74rem; color:#5c4d80; letter-spacing:.1em;
+    text-transform:uppercase;
+  }
+
+  @media (max-width:600px){
+    body{ padding:24px 14px 50px; }
+    .upload-zone{ padding:52px 18px; }
+    button{ padding:10px 13px; font-size:.8rem; }
+    .btn-ai{ padding:11px 18px; }
+    input[type=range]{ width:80px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-glow"></div>
+<div class="grid"></div>
+
+<header>
+  <h1>NeonCut AI</h1>
+  <p><span class="dot"></span>Нейросеть BRIA RMBG-1.4
+</header>
+
+<main>
+  <div id="uploadScreen" class="glass upload-zone">
+    <div class="beam"></div>
+    <div class="upload-icon">
+      <svg viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+    </div>
+    <h2>Перетащите изображение</h2>
+    <p>или нажмите, чтобы выбрать файл</p>
+    <div class="hint">PNG · JPG · WEBP</div>
+    <input type="file" id="fileInput" accept="image/*" hidden>
+  </div>
+
+  <div id="editorScreen" class="glass editor" hidden>
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="canvas"></canvas>
+      <div class="brush-cursor" id="brushCursor"></div>
+      <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="ltxt" id="loadingText">Инициализация нейросети…</div>
+        <div class="lbar"><i id="loadingBar"></i></div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn-ai" id="btnAI">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/>
+          <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/>
+        </svg>
+        Удалить фон
+      </button>
+
+      <div class="tool-group">
+        <button id="btnErase" class="active" title="Ластик">
+          <svg viewBox="0 0 24 24">
+            <path d="M20 20H8.5L3 14.5a2 2 0 0 1 0-2.8l8-8a2 2 0 0 1 2.8 0L21 11a2 2 0 0 1 0 2.8L13 22"/>
+            <line x1="6" y1="11" x2="13" y2="18"/>
+          </svg>
+          Ластик
+        </button>
+        <button id="btnRestore" title="Вернуть удалённое">
+          <svg viewBox="0 0 24 24">
+            <path d="M3 21l3.5-1 11-11a2.5 2.5 0 0 0-3.5-3.5l-11 11L3 21z"/>
+            <path d="M14.5 5.5L18.5 9.5"/>
+          </svg>
+          Вернуть
+        </button>
+      </div>
+
+      <div class="slider-wrap">
+        <label>Кисть</label>
+        <input type="range" id="brushRange" min="6" max="180" value="46">
+        <span class="val" id="brushVal">46</span>
+      </div>
+
+      <div class="tool-group">
+        <button id="btnUndo" title="Отменить">
+          <svg viewBox="0 0 24 24">
+            <path d="M3 7v6h6"/>
+            <path d="M3.5 13a9 9 0 1 0 2.6-6.4L3 9.5"/>
+          </svg>
+          Отменить
+        </button>
+        <button id="btnReset" title="Сброс">
+          <svg viewBox="0 0 24 24">
+            <path d="M23 4v6h-6"/>
+            <path d="M20.5 14a9 9 0 1 1-2.6-6.4L23 10"/>
+          </svg>
+          Сброс
+        </button>
+        <button id="btnDownload" title="Скачать PNG">
+          <svg viewBox="0 0 24 24">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Скачать
+        </button>
+        <button id="btnNew" title="Новое изображение">
+          <svg viewBox="0 0 24 24">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>NeonCut AI · BRIA RMBG-1.4 · ONNX Runtime Web</footer>
+
+<div class="toast" id="toast"><span class="tdot"></span><span id="toastText"></span></div>
+
+<!-- Подключаем библиотеку как ES-модуль и импортируем функцию -->
+<script type="module">
+  import { removeBackground } from "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm";
+  window.imglyRemoveBackground = removeBackground;
+  window.dispatchEvent(new Event('imgly-ready'));
+</script>
+
+<script>
+/* ============================================================
+   ОЖИДАНИЕ ЗАГРУЗКИ БИБЛИОТЕКИ
+============================================================ */
+let imglyReady = false;
+window.addEventListener('imgly-ready', () => {
+  imglyReady = true;
+  console.log('NeonCut: библиотека удаления фона загружена');
+});
+
+/* ============================================================
+   ЭЛЕМЕНТЫ
+============================================================ */
+const uploadScreen  = document.getElementById('uploadScreen');
+const editorScreen  = document.getElementById('editorScreen');
+const fileInput     = document.getElementById('fileInput');
+const canvas        = document.getElementById('canvas');
+const ctx           = canvas.getContext('2d', { willReadFrequently: true });
+const canvasWrap    = document.getElementById('canvasWrap');
+const brushCursor   = document.getElementById('brushCursor');
+const loadingOverlay= document.getElementById('loadingOverlay');
+const loadingText   = document.getElementById('loadingText');
+const loadingBar    = document.getElementById('loadingBar');
+const btnAI         = document.getElementById('btnAI');
+const btnErase      = document.getElementById('btnErase');
+const btnRestore    = document.getElementById('btnRestore');
+const btnUndo       = document.getElementById('btnUndo');
+const btnReset      = document.getElementById('btnReset');
+const btnDownload   = document.getElementById('btnDownload');
+const btnNew        = document.getElementById('btnNew');
+const brushRange    = document.getElementById('brushRange');
+const brushVal      = document.getElementById('brushVal');
+const toast         = document.getElementById('toast');
+const toastText     = document.getElementById('toastText');
+
+/* ============================================================
+   СОСТОЯНИЕ
+============================================================ */
+let originalImage = null;
+let originalFile  = null;
+let hasImage      = false;
+let tool          = 'erase';
+let brushSize     = 46;
+let drawing       = false;
+let lastPt        = null;
+let history       = [];
+const MAX_HISTORY = 12;
+
+/* ============================================================
+   ТОСТ
+============================================================ */
+let toastTimer = null;
+function showToast(msg, ms = 2800){
+  toastText.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), ms);
+}
+
+/* ============================================================
+   ЗАГРУЗКА
+============================================================ */
+uploadScreen.addEventListener('click', () => fileInput.click());
+['dragenter','dragover'].forEach(ev =>
+  uploadScreen.addEventListener(ev, e => {
+    e.preventDefault();
+    uploadScreen.classList.add('drag');
+  })
+);
+['dragleave','drop'].forEach(ev =>
+  uploadScreen.addEventListener(ev, e => {
+    e.preventDefault();
+    uploadScreen.classList.remove('drag');
+  })
+);
+uploadScreen.addEventListener('drop', e => {
+  const f = e.dataTransfer.files?.[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener('change', e => {
+  const f = e.target.files?.[0];
+  if (f) handleFile(f);
+});
+
+function handleFile(file){
+  if (!file.type.startsWith('image/')){
+    showToast('Это не изображение 🤔');
+    return;
+  }
+  originalFile = file;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      originalImage = img;
+      setupCanvas(img);
+      uploadScreen.hidden = true;
+      editorScreen.hidden = false;
+      history = [];
+      showToast('Изображение загружено ✨');
+      setTimeout(updateCursorSize, 50);
+    };
+    img.onerror = () => showToast('Не удалось прочитать изображение');
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function setupCanvas(img){
+  const MAX = 1600;
+  let w = img.naturalWidth, h = img.naturalHeight;
+  if (Math.max(w, h) > MAX){
+    const s = MAX / Math.max(w, h);
+    w = Math.round(w * s);
+    h = Math.round(h * s);
+  }
+  canvas.width = w;
+  canvas.height = h;
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  hasImage = true;
+}
+
+/* ============================================================
+   ИСТОРИЯ
+============================================================ */
+function saveHistory(){
+  try{
+    const snap = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    history.push(snap);
+    if (history.length > MAX_HISTORY) history.shift();
+  } catch(e){}
+}
+function undo(){
+  if (!history.length){ showToast('Нечего отменять'); return; }
+  const snap = history.pop();
+  ctx.putImageData(snap, 0, 0);
+}
+btnUndo.addEventListener('click', undo);
+
+/* ============================================================
+   ИНСТРУМЕНТЫ
+============================================================ */
+function setTool(t){
+  tool = t;
+  btnErase.classList.toggle('active', t === 'erase');
+  btnRestore.classList.toggle('active', t === 'restore');
+  brushCursor.classList.toggle('restore', t === 'restore');
+}
+btnErase.addEventListener('click', () => setTool('erase'));
+btnRestore.addEventListener('click', () => setTool('restore'));
+
+brushRange.addEventListener('input', e => {
+  brushSize = +e.target.value;
+  brushVal.textContent = brushSize;
+  const p = ((brushSize - 6) / (180 - 6)) * 100;
+  brushRange.style.setProperty('--p', p + '%');
+  updateCursorSize();
+});
+brushRange.dispatchEvent(new Event('input'));
+
+/* ============================================================
+   КУРСОР
+============================================================ */
+function updateCursorSize(){
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !canvas.width) return;
+  const scale = rect.width / canvas.width;
+  const d = brushSize * 2 * scale;
+  brushCursor.style.width = d + 'px';
+  brushCursor.style.height = d + 'px';
+}
+canvasWrap.addEventListener('pointerenter', () => {
+  if (hasImage) brushCursor.classList.add('show');
+});
+canvasWrap.addEventListener('pointerleave', () => {
+  brushCursor.classList.remove('show');
+});
+canvasWrap.addEventListener('pointermove', e => {
+  if (!hasImage) return;
+  const wrapRect = canvasWrap.getBoundingClientRect();
+  brushCursor.style.left = (e.clientX - wrapRect.left) + 'px';
+  brushCursor.style.top  = (e.clientY - wrapRect.top)  + 'px';
+  updateCursorSize();
+});
+window.addEventListener('resize', updateCursorSize);
+
+/* ============================================================
+   РИСОВАНИЕ
+============================================================ */
+function getPos(e){
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width;
+  const sy = canvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * sx,
+    y: (e.clientY - rect.top) * sy
+  };
+}
+canvas.addEventListener('pointerdown', e => {
+  if (!hasImage) return;
+  e.preventDefault();
+  drawing = true;
+  canvas.setPointerCapture(e.pointerId);
+  saveHistory();
+  const p = getPos(e);
+  lastPt = p;
+  strokeSegment(p.x, p.y, p.x, p.y);
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drawing || !hasImage) return;
+  const p = getPos(e);
+  if (lastPt) strokeSegment(lastPt.x, lastPt.y, p.x, p.y);
+  lastPt = p;
+});
+['pointerup','pointercancel','pointerleave'].forEach(ev =>
+  canvas.addEventListener(ev, () => {
+    if (!drawing) return;
+    drawing = false;
+    lastPt = null;
+  })
+);
+
+function strokeSegment(x0, y0, x1, y1){
+  if (tool === 'erase'){
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.lineWidth = brushSize * 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(1, Math.ceil(dist / Math.max(2, brushSize * 0.4)));
+    for (let i = 0; i <= steps; i++){
+      const t = i / steps;
+      const x = x0 + (x1 - x0) * t;
+      const y = y0 + (y1 - y0) * t;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, brushSize, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
+  }
+}
+
+/* ============================================================
+   ЗАГРУЗЧИК
+============================================================ */
+function showLoading(show, text, bar){
+  loadingOverlay.classList.toggle('show', show);
+  if (text) loadingText.textContent = text;
+  if (typeof bar === 'number') setBar(bar);
+  else if (show) setBar(0);
+}
+function setBar(p){
+  loadingBar.style.width = Math.max(0, Math.min(100, p)) + '%';
+}
+
+/* ============================================================
+   УДАЛЕНИЕ ФОНА — @imgly/background-removal (BRIA RMBG-1.4)
+============================================================ */
+btnAI.addEventListener('click', async () => {
+  if (!hasImage) return;
+
+  // Проверяем, загрузилась ли библиотека (даём время до 10 секунд)
+  if (!imglyReady){
+    showToast('Библиотека ещё загружается, подождите…');
+    for (let i = 0; i < 20; i++){
+      await new Promise(r => setTimeout(r, 500));
+      if (imglyReady) break;
+    }
+    if (!imglyReady){
+      showToast('Не удалось загрузить библиотеку. Проверьте интернет.');
+      return;
+    }
+  }
+
+  if (typeof window.imglyRemoveBackground !== 'function'){
+    showToast('Нейросеть не загрузилась. Проверьте интернет.');
+    return;
+  }
+
+  saveHistory();
+  btnAI.disabled = true;
+  showLoading(true, 'Инициализация нейросети…', 2);
+
+  try {
+    const fileBlob = originalFile
+      ? originalFile
+      : await new Promise(res => canvas.toBlob(res, 'image/png'));
+
+    let lastPhase = '';
+    const onProgress = (key, current, total) => {
+      if (typeof current === 'number' && typeof total === 'number' && total > 0){
+        const pct = current / total;
+        let phase;
+        if (key && key.includes('fetch')) phase = 'Загрузка модели';
+        else if (key && key.includes('compute')) phase = 'Анализ изображения';
+        else phase = 'Обработка';
+
+        let p;
+        if (phase === 'Загрузка модели') p = 4 + pct * 60;
+        else if (phase === 'Анализ изображения') p = 65 + pct * 30;
+        else p = 4 + pct * 90;
+
+        setBar(p);
+        if (phase !== lastPhase){
+          lastPhase = phase;
+          loadingText.textContent = phase + '…';
+        }
+      }
+    };
+
+    // Правильный publicPath для загрузки моделей
+    const config = {
+      publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/',
+      debug: false,
+      progress: onProgress,
+      output: {
+        format: 'image/png',
+        quality: 1.0,
+        type: 'foreground'
+      }
+    };
+
+    loadingText.textContent = 'Нейросеть обрабатывает изображение…';
+
+    const resultBlob = await window.imglyRemoveBackground(fileBlob, config);
+    setBar(97);
+    loadingText.textContent = 'Применяем результат…';
+
+    const url = URL.createObjectURL(resultBlob);
+    const out = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Не удалось прочитать результат'));
+      img.src = url;
+    });
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(out, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+
+    setBar(100);
+    loadingText.textContent = 'Готово ✓';
+
+    setTimeout(() => {
+      showLoading(false);
+      btnAI.disabled = false;
+      showToast('Фон удалён нейросетью RMBG-1.4 🧠✨');
+      updateCursorSize();
+    }, 300);
+
+  } catch(err){
+    console.error('AI error:', err);
+    showLoading(false);
+    btnAI.disabled = false;
+    showToast('Ошибка ИИ: ' + (err.message || err).toString().slice(0, 80));
+  }
+});
+
+/* ============================================================
+   СБРОС / СКАЧИВАНИЕ / НОВОЕ
+============================================================ */
+btnReset.addEventListener('click', () => {
+  if (!hasImage || !originalImage) return;
+  saveHistory();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height);
+  showToast('Изображение восстановлено');
+});
+
+btnDownload.addEventListener('click', async () => {
+  if (!hasImage){ showToast('Сначала загрузите изображение'); return; }
+  const filename = 'neoncut-' + Date.now() + '.png';
+
+  function triggerDownload(href, revoke){
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename;
+    a.rel = 'noopener';
+    a.style.position = 'fixed';
+    a.style.left = '-9999px';
+    document.body.appendChild(a);
+    requestAnimationFrame(() => {
+      a.click();
+      setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+        if (revoke) setTimeout(() => URL.revokeObjectURL(href), 2500);
+      }, 200);
+    });
+  }
+
+  try {
+    const blob = await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('timeout')), 8000);
+      try {
+        canvas.toBlob(b => {
+          clearTimeout(t);
+          b ? resolve(b) : reject(new Error('null blob'));
+        }, 'image/png');
+      } catch (e){
+        clearTimeout(t);
+        reject(e);
+      }
+    });
+    triggerDownload(URL.createObjectURL(blob), true);
+    showToast('Файл сохраняется 💾');
+    return;
+  } catch(e){
+    console.warn('toBlob failed:', e);
+  }
+
+  try {
+    const dataUrl = canvas.toDataURL('image/png');
+    if (!dataUrl || dataUrl.length < 100) throw new Error('bad dataURL');
+    triggerDownload(dataUrl, false);
+    showToast('Файл сохраняется 💾');
+    return;
+  } catch(e){
+    console.error('toDataURL failed:', e);
+  }
+
+  showToast('Не удалось скачать 😕');
+});
+
+btnNew.addEventListener('click', () => {
+  editorScreen.hidden = true;
+  uploadScreen.hidden = false;
+  fileInput.value = '';
+  hasImage = false;
+  history = [];
+  originalImage = null;
+  originalFile = null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+});
+
+/* ============================================================
+   ГОРЯЧИЕ КЛАВИШИ
+============================================================ */
+window.addEventListener('keydown', e => {
+  if (!hasImage) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z'){
+    e.preventDefault();
+    undo();
+  }
+  if (e.key.toLowerCase() === 'e') setTool('erase');
+  if (e.key.toLowerCase() === 'r') setTool('restore');
+  if (e.key === '['){
+    brushRange.value = Math.max(6, brushSize - 6);
+    brushRange.dispatchEvent(new Event('input'));
+  }
+  if (e.key === ']'){
+    brushRange.value = Math.min(180, brushSize + 6);
+    brushRange.dispatchEvent(new Event('input'));
+  }
+});
+</script>
+</body>
+</html>
